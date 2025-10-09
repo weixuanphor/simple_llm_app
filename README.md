@@ -39,3 +39,13 @@ Chat is available at http://localhost:5173/
 
 Interacting with the app
 ![App Demo](demo.JPG)
+
+Sending feedback to the app.
+![App Demo](feedback.JPG)
+
+The app only supports finetuning based on simple feedback (upvote/downvote and short comments like "too easy/ hard") for now.
+- Before feedback
+![App Demo](before_feedback.JPG)
+
+- After feedback (note: recipe becomes harder)
+![App Demo](after_feedback.JPG)

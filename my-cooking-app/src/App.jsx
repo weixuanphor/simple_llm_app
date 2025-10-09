@@ -4,6 +4,8 @@ import "./App.css";
 function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+  const [activeFeedbackIndex, setActiveFeedbackIndex] = useState(null);
+  const [feedbackText, setFeedbackText] = useState("");
   const chatEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -19,6 +21,7 @@ function App() {
 
     const newMessages = [...messages, { role: "user", text: input }];
     setMessages(newMessages);
+    setInput("");
 
     const conversationHistory = newMessages.slice(-6);
 
@@ -35,24 +38,23 @@ function App() {
       const data = await res.json();
       let reply = data.reply;
 
-      // 🧠 Detect markdown code blocks with JSON
+      // Detect JSON code blocks
       let formattedJson = null;
       let isJson = false;
 
-      const codeBlockMatch = typeof reply === "string" && reply.match(/```json([\s\S]*?)```/i);
+      const codeBlockMatch =
+        typeof reply === "string" && reply.match(/```json([\s\S]*?)```/i);
       if (codeBlockMatch) {
         try {
           const jsonStr = codeBlockMatch[1].trim();
           const obj = JSON.parse(jsonStr);
           formattedJson = JSON.stringify(obj, null, 2);
           isJson = true;
-          reply = ""; // Hide raw text
+          reply = "";
         } catch (err) {
           console.error("❌ Failed to parse JSON block:", err);
         }
-      } 
-      // if backend already returns parsed JSON (not string)
-      else if (typeof reply === "object") {
+      } else if (typeof reply === "object") {
         formattedJson = JSON.stringify(reply, null, 2);
         isJson = true;
         reply = "";
@@ -66,14 +68,15 @@ function App() {
       console.error("⚠️ Error fetching:", err);
       setMessages([
         ...newMessages,
-        { role: "agent", text: "Something went wrong. Try again.", isJson: false },
+        {
+          role: "agent",
+          text: "Something went wrong. Try again.",
+          isJson: false,
+        },
       ]);
     }
-
-    setInput("");
   };
 
-  // 🌈 Simple syntax highlighter for JSON
   const highlightJSON = (jsonString) => {
     if (!jsonString) return "";
     return jsonString
@@ -96,6 +99,27 @@ function App() {
       );
   };
 
+  // Send feedback to backend
+  const sendFeedback = async (type, message, index) => {
+    try {
+      await fetch("http://127.0.0.1:8000/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, message }),
+      });
+
+      setMessages((prev) =>
+        prev.map((m, i) =>
+          i === index ? { ...m, feedbackSent: true } : m
+        )
+      );
+      setActiveFeedbackIndex(null);
+      setFeedbackText("");
+    } catch (err) {
+      console.error("⚠️ Error sending feedback:", err);
+    }
+  };
+
   return (
     <div className="chat-container">
       <h2>🥘 Recipe Chatbot</h2>
@@ -114,7 +138,6 @@ function App() {
                   const recipe = recipeData.recipes?.[0];
                   if (!recipe) throw new Error("No recipe found");
 
-                  // Extract known fields
                   const {
                     name,
                     ingredients,
@@ -128,57 +151,62 @@ function App() {
                   return (
                     <div className="recipe-card">
                       <h3 className="recipe-title">🍽️ {name}</h3>
-
                       {(cookingTime || difficulty) && (
                         <div className="recipe-meta">
-                          {cookingTime && <p><strong>⏱ Cooking Time:</strong> {cookingTime}</p>}
-                          {difficulty && <p><strong>🎯 Difficulty:</strong> {difficulty}</p>}
+                          {cookingTime && (
+                            <p>
+                              <strong>⏱ Cooking Time:</strong> {cookingTime}
+                            </p>
+                          )}
+                          {difficulty && (
+                            <p>
+                              <strong>🎯 Difficulty:</strong> {difficulty}
+                            </p>
+                          )}
                         </div>
                       )}
-
-                      {ingredients && ingredients.length > 0 && (
+                      {ingredients && (
                         <div className="recipe-section">
                           <h4>🧂 Ingredients</h4>
                           <ul>
-                            {ingredients.map((ing, i) => (
-                              <li key={i}>{ing}</li>
+                            {ingredients.map((ing, j) => (
+                              <li key={j}>{ing}</li>
                             ))}
                           </ul>
                         </div>
                       )}
-
-                      {instructions && instructions.length > 0 && (
+                      {instructions && (
                         <div className="recipe-section">
                           <h4>👩‍🍳 Instructions</h4>
                           <ol>
-                            {instructions.map((step, i) => (
-                              <li key={i}>Step {i + 1}: {step}</li>
+                            {instructions.map((step, j) => (
+                              <li key={j}>Step {j + 1}: {step}</li>
                             ))}
                           </ol>
                         </div>
                       )}
-
                       {nutrition && (
                         <div className="recipe-section">
                           <h4>🥗 Nutrition</h4>
                           <ul>
                             {Object.entries(nutrition).map(([k, v]) => (
                               <li key={k}>
-                                <strong>{k.charAt(0).toUpperCase() + k.slice(1)}:</strong> {v}
+                                <strong>{k}:</strong> {v}
                               </li>
                             ))}
                           </ul>
                         </div>
                       )}
-
                       {Object.keys(otherInfo).length > 0 && (
                         <div className="recipe-section">
                           <h4>📘 Other Info</h4>
                           <ul>
                             {Object.entries(otherInfo).map(([k, v]) => (
                               <li key={k}>
-                                <strong>{k.charAt(0).toUpperCase() + k.slice(1)}:</strong>{" "}
-                                {typeof v === "object" ? JSON.stringify(v, null, 2) : String(v)}
+                                <strong>{k}:</strong>{" "}
+                                {typeof v === "object"
+                                  ? JSON.stringify(v, null, 2)
+                                  : String(v)}
                               </li>
                             ))}
                           </ul>
@@ -187,7 +215,6 @@ function App() {
                     </div>
                   );
                 } catch (err) {
-                  console.error("Invalid recipe JSON:", err);
                   return (
                     <pre
                       className="json-bubble"
@@ -200,6 +227,46 @@ function App() {
               })()
             ) : (
               <div className="message-bubble text-bubble">{m.text}</div>
+            )}
+
+            {/* 👍 👎 Feedback Section */}
+            {m.role === "agent" && !m.feedbackSent && (
+              <div className="feedback-buttons">
+                <span className="feedback-label">How was the response?</span>
+                <button
+                  className="thumb-up"
+                  onClick={() => sendFeedback("upvote", "", i)}
+                >
+                  👍
+                </button>
+                <button
+                  className="thumb-down"
+                  onClick={() =>
+                    setActiveFeedbackIndex(
+                      activeFeedbackIndex === i ? null : i
+                    )
+                  }
+                >
+                  👎
+                </button>
+
+                {activeFeedbackIndex === i && (
+                  <div className="feedback-box">
+                    <textarea
+                      placeholder="What could be improved?"
+                      value={feedbackText}
+                      onChange={(e) => setFeedbackText(e.target.value)}
+                    />
+                    <button
+                      onClick={() =>
+                        sendFeedback("downvote", feedbackText, i)
+                      }
+                    >
+                      Send
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         ))}
